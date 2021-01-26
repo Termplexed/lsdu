@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# START LSDU CLASS
+# START LSDU CLASS (AWK POWER)
 lsdu()
 {
 	du -b --max-depth=1 . | \
