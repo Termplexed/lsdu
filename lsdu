@@ -1,0 +1,267 @@
+#!/bin/bash
+
+# START LSDU CLASS
+lsdu()
+{
+	du -b --max-depth=1 . | \
+	(sort -rhk1 && ls -Al1SgGp --time-style=+ .  | \
+	grep "[^/]$" ) | \
+	awk \
+	-v prec="$prec" \
+	-v size="$size" \
+	-v si="$si" \
+	-v clr_n=$clr_n \
+	-v clr_sz=$clr_sz \
+	-v prnt_dir=$prnt_dir \
+	-v prnt_root=$prnt_root \
+	-v prnt_root_total=$prnt_root_total '
+# Colorized Unit Sizes
+function sz_unit_clr(sz)
+{
+	if (sz < KiB)
+		return sprintf("%s%*d %s%s", clr_B, nwid, sz, "B  ", clr_0)
+	if (sz < MiB)
+		return sprintf("%s%*.*f %s%s", clr_kib, nwid, prec, sz / KiB, Ks, clr_0)
+	if (sz < GiB)
+		return sprintf("%s%*.*f %s%s", clr_mib, nwid, prec, sz / MiB, Ms, clr_0)
+	if (sz < TiB)
+		return sprintf("%s%*.*f %s%s", clr_gib, nwid, prec, sz / GiB, Gs, clr_0)
+	return sprintf("%s%*.*f %s%s", clr_tib, nwid, prec, sz / TiB, Ts, clr_0)
+}
+# Black and White Unit Sizes
+function sz_unit_bw(sz)
+{
+	if (sz < KiB)
+		return sprintf("%*d %s", nwid, sz, "B  ")
+	if (sz < MiB)
+		return sprintf("%*.*f %s", nwid, prec, sz / KiB, Ks)
+	if (sz < GiB)
+		return sprintf("%*.*f %s", nwid, prec, sz / MiB, Ms)
+	if (sz < TiB)
+		return sprintf("%*.*f %s", nwid, prec, sz / GiB, Gs)
+	return sprintf("%*.*f %s", nwid, prec, sz / TiB, Ts)
+}
+# Unit Size
+function szu(sz)
+{
+	if (size != "h") {
+		switch (size) {
+		case "B":
+			return sprintf("%*d %s", nwid, sz, "B  ")
+		case "K":
+			return sprintf("%*.*f %s", nwid, prec, sz / KiB, Ks)
+		case "M":
+			return sprintf("%*.*f %s", nwid, prec + 1, sz / MiB, Ms)
+		case "G":
+			return sprintf("%*.*f %s", nwid, prec + 2, sz / GiB, Gs)
+		case "T":
+			return sprintf("%*.*f %s", nwid, prec + 3, sz / TiB, Ts)
+		default:
+			size="h"
+			return szu(sz)
+		}
+	} else if (clr_sz) {
+		return sz_unit_clr(sz)
+	} else {
+		return sz_unit_bw(sz)
+	}
+}
+
+BEGIN {
+	#use_clr=$clr
+	if (!prec || prec == -1)
+		prec = 1
+	nwid = (size=="h" ? 5 + prec : 8 + prec)
+	a = 0
+	z = 0
+	t = 0
+
+	if (si || size == "b" || size == "k" || size == "m" || size == "g" || size == "t") {
+		KiB = (10^3)
+		MiB = (10^6)
+		GiB = (10^9)
+		TiB = (10^12)
+		Ks  = "KB"
+		Ms  = "MB"
+		Gs  = "GB"
+		Ts  = "TB"
+		size = toupper(size)
+		#printf "%d\n%d\n%d\n%d\n", KiB, MiB, GiB, TiB
+	} else {
+		KiB = (2^10)
+		MiB = (2^20)
+		GiB = (2^30)
+		TiB = (2^40)
+		Ks  = "KiB"
+		Ms  = "MiB"
+		Gs  = "GiB"
+		Ts  = "TiB"
+	}
+	clr_B  ="\033[1;39m"
+	clr_kib="\033[1;35m"
+	clr_mib="\033[1;36m"
+	clr_gib="\033[1;37m"
+	clr_tib="\033[1;38m"
+
+	clr_dir="\033[1;34m"
+	clr_fil="\033[2;32m"
+
+	clr_sr ="\033[1;33m"
+	clr_gt ="\033[1;31m"
+
+	clr_0="\033[0m"
+	if (!clr_n) {
+		clr_dir=""
+		clr_fil=""
+		clr_sr=""
+		clr_gt=""
+		clr_0=""
+	}
+}
+/^total/ {
+	a = NR
+	#z = $2
+	next
+}
+a == 0 {
+	if (/^\s*[0-9]+\s+\.$/) {
+		# Total from du -b
+		t = $1
+	} else {
+		# Directory from du
+		if (!prnt_dir)
+			next
+		printf "%s  %s",
+			szu($1), clr_dir
+		if ($2 ~ /^\.\//)
+			$2 = substr($2, 3)
+		printf("%s%s", $2, (NF > 2 ? " " : ""))
+		for (i = 3; i <= NF; ++i)
+			printf "%s ", $i
+		printf "/%s\n", clr_0
+	}
+	next
+}
+/^-/ {
+	# File from ls
+	z += $3
+	if (prnt_root) {
+		printf "%s%s  ", szu($3), clr_fil
+		for (i = 4; i <= NF; ++i)
+			printf "%s ", $i
+		printf "%s\n", clr_0
+	}
+}
+END {
+	clr_sz=0
+	if (prnt_root_total)
+		printf "%s%s Files root%s\n", clr_sr, szu(z), clr_0
+	printf "%s%s Grand Total%s\n", clr_gt, szu(t), clr_0
+}
+'
+}
+# EOF START LSDU CLASS
+
+
+usage()
+{
+	printf "Usage: %s [OPTION|DIRECTOR(Y|IES)]\n" "$(basename $0)"
+	printf "  Options:\n"
+	printf "    --     Everything after this is treated as directories.\n"
+	printf "    -c     Use color on sizes. Default on.\n"
+	printf "    -C     Use colors on names. Default on.\n"
+	printf "    -d     Print directories. Default on\n"
+	printf "    -f     Print files in root directory. Default on.\n"
+	printf "    -r     Same as -f.\n"
+	printf "    -rt    Print root total. Default on.\n"
+	printf "    -si    Use units of 10^x instead of 2^x. Default 2^x\n"
+	printf "    -z  S  Use specific size. b B k K m M g G t T where lower\n"
+	printf "           case is 10^x and upper 2^x. h is human and best fit\n"
+	printf "           is used. Default \"h\".\n"
+	printf "    -p  N  Precision to use. Default 1.\n"
+	printf "    -h     This help."
+	printf "\n\n"
+	printf "  Every option can be prefixed with \`n' no negate. E.g. -nc.\n"
+}
+
+declare -i clr_sz=1
+declare -i clr_n=1
+declare -i prnt_dir=1
+declare -i prnt_root=1
+declare -i prnt_root_total=1
+size=h
+declare -i si=0
+declare -i prec=-1
+dir=
+declare -A dirs=()
+declare -i dc=0
+parse_opt()
+{
+	while [[ -n "$1" ]]; do
+		case "$1" in
+		--)	shift; break;;
+		-h|--help|-"?") usage; exit 0;;
+		-c)	clr_sz=1;;
+		-nc)	clr_sz=0;;
+		-C)	clr_n=1;;
+		-nC)	clr_n=0;;
+		-d)	prnt_dir=1;;
+		-nd)	prnt_dir=0;;
+		-f|-r)	prnt_root=1;;
+		-nf|-nr)prnt_root=0;;
+		#-r)	prnt_root=1;;
+		#-nr)	prnt_root=0;;
+		-rt)	prnt_root_total=1;;
+		-nrt)	prnt_root_total=0;;
+		-si)	si=1;;
+		-nsi)	si=0;;
+		-z|-z*)
+			if [[ "${1:2}" != "" ]]; then size="${1:2}"
+			else size="$2"; shift; fi ;;
+		-p|-p[0-9]*)
+			if [[ "${1:2}" != "" ]]; then prec="${1:2}"
+			else prec="$2"; shift; fi; ;;
+		-*)	printf "Unknown option \`%s'.\n" "$1" >&2
+			exit 1;;
+		*) dirs["d.$dc"]="$1"
+			((++dc))
+			;;
+		esac
+		shift
+	done
+	while [[ -n "$1" ]]; do
+		dirs["d.$dc"]="$1"
+		((++dc))
+		shift
+	done
+}
+
+parse_opt "$@"
+
+if ((dc == 0)); then
+	lsdu "."
+	exit 0
+fi
+
+declare -i argc=$#
+declare -i chck_opt=1
+declare -i i
+for ((i = 0; i < dc; ++i)); do
+	dir="${dirs[d.$i]}"
+	echo "DODIR $dir"
+	if [[ ! -d "$dir" ]]; then
+		printf "\`%s' is not a directory.\n" "$dir" >&2
+		exit 1
+	fi
+
+	#trap "popd > /dev/null" EXIT INT TERM
+	if ! pushd "$dir" > /dev/null 2>&1; then
+		printf "Unable to enter directory \`%s'\n" "$dir"
+		#trap - EXIT INT TERM
+		exit 1
+	fi
+	((i)) && echo
+	((dc > 1)) && printf "DIR: %s\n" "$dir"
+	lsdu "$dir"
+	popd >/dev/null
+done
